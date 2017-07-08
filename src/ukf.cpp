@@ -14,6 +14,9 @@ UKF::UKF() {
   // Set to true after receiving first measurement
   is_initialized_ = false;
 
+  // How many measurements processed so far?
+  iterations = 0;
+
   // if this is false, laser measurements will be ignored (except during init)
   use_laser_ = true;
 
@@ -27,7 +30,7 @@ UKF::UKF() {
   // Process noise standard deviation longitudinal acceleration in m/s^2
   // Typical bicycle speed is 5.5 m/s. Braking to stop takes about a second, so max 5.5 m/s2.
   // Use half of that for std dev of 2.7 m/s2.
-  std_a_ = 2.7;
+  std_a_ = 1.4;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
   // Bicycle can complete a full circle in about 5 seconds, so max turn of 2PI/5s or 1.2 rad/s.
@@ -42,7 +45,7 @@ UKF::UKF() {
   std_laspy_ = 0.15;
 
   // Radar measurement noise standard deviation radius in m
-  std_radr_ = 0.3;
+  std_radr_ = 0.4;
 
   // Radar measurement noise standard deviation angle in rad
   std_radphi_ = 0.03;
@@ -132,6 +135,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     }
 
     is_initialized_ = true;
+    iterations++;
     return;
   }
   double delta_t = (meas_package.timestamp_ - time_us_) * 0.000001;
@@ -141,10 +145,14 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   cout << "Pmag = " << P_.norm() << endl;
   if(meas_package.sensor_type_ == MeasurementPackage::RADAR) {
     cout << "Radar measurement is:" << endl << meas_package.raw_measurements_ << endl;
-    UpdateRadar(meas_package);
+    if(use_radar_) {
+      UpdateRadar(meas_package);
+    }
   } else if(meas_package.sensor_type_ == MeasurementPackage::LASER) {
     cout << "Lidar measurement is:" << endl << meas_package.raw_measurements_ << endl;
-    UpdateLidar(meas_package);
+    if(use_laser_) {
+      UpdateLidar(meas_package);
+    }
   } else {
     cout << "Unrecognized sensor type" << endl;
     throw "Unrecognized sensor type";
@@ -152,6 +160,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   cout << "After measurement:" << endl << x_ << endl;
   cout << "Pmag = " << P_.norm() << endl;
   time_us_ = meas_package.timestamp_;
+  iterations++;
 }
 
 /**
@@ -230,19 +239,21 @@ void UKF::Prediction(double delta_t) {
     Xsig_pred_(4,i) = yawd_pred;
   }
   cout << "Xsig_pred" << endl << Xsig_pred_ << endl << endl;
+  // shift yaw by yaw_offset, and shift back after calculating x and P.
+  // trying to keep yaw away from discontinuity at +- pi.
+  double yaw_offset = - Xsig_pred_(3,0);
+  for(int i = 0; i < 2*n_aug_+1; i++) {
+    Xsig_pred_(3,i) = Xsig_pred_(3,i) + yaw_offset;
+    while(Xsig_pred_(3,i) > M_PI) Xsig_pred_(3,i) -= 2. * M_PI;
+    while(Xsig_pred_(3,i) < -M_PI) Xsig_pred_(3,i) += 2. * M_PI;
+  }
   // Calculate predicted state matrix
   x_.fill(0.0);
   for(int i = 0; i < 2*n_aug_+1; i++) {
     x_ += weights(i) * Xsig_pred_.col(i);
   }
-  // Prevent extreme values of v, yaw, and yawd
-  if(x_(2) < -0.01) {
-    x_(2) = x_(2) * -1.0;
-    x_(3) = x_(3) * -1.0;
-  }
+  // Prevent extreme values of v and yawd
   if(x_(2) > 10.0) x_(2) = 10.0;
-  while(x_(3) > M_PI) x_(3) -= 2. * M_PI;
-  while(x_(3) < -M_PI) x_(3) += 2. * M_PI;
   if(x_(4) > 2.0) x_(4) = 2.0;
   if(x_(4) < -2.0) x_(4) = -2.0;
   // Calculate predicted state covariance matrix
@@ -251,6 +262,21 @@ void UKF::Prediction(double delta_t) {
     VectorXd diff = Xsig_pred_.col(i) - x_;
     P_ += weights(i) * diff * diff.transpose();
   }
+  // Undo offset
+  x_(3) = x_(3) - yaw_offset;
+  for(int i = 0; i < 2*n_aug_+1; i++) {
+    Xsig_pred_(3,i) = Xsig_pred_(3,i) - yaw_offset;
+    while(Xsig_pred_(3,i) > M_PI) Xsig_pred_(3,i) -= 2. * M_PI;
+    while(Xsig_pred_(3,i) < -M_PI) Xsig_pred_(3,i) += 2. * M_PI;
+  }
+  // Prevent negative v
+  if(x_(2) < -0.01) {
+    x_(2) = x_(2) * -1.0;
+    x_(3) = x_(3) + M_PI;
+  }
+  // Prevent extreme values of yaw
+  while(x_(3) > M_PI) x_(3) -= 2. * M_PI;
+  while(x_(3) < -M_PI) x_(3) += 2. * M_PI;
 }
 
 /**
@@ -294,7 +320,23 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   MatrixXd K = Tc * S.inverse();
   // Update state mean and covariance
   VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
-  x_ += K * z_diff;
+
+  VectorXd x_diff = K * z_diff;
+  cout << "Lidar x_diff: " << endl << x_diff << endl;
+  //if(iterations > 10) {
+    // After 10 iterations, when model has stabilized, don't let one measurement have too much impact.
+    //if(x_diff(0) > 0.1) x_diff(0) = 0.1;
+    //if(x_diff(0) < -0.1) x_diff(0) = -0.1;
+    //if(x_diff(1) > 0.1) x_diff(1) = 0.1;
+    //if(x_diff(1) < -0.1) x_diff(1) = -0.1;
+    //if(x_diff(2) > 0.1) x_diff(2) = 0.2;
+    //if(x_diff(2) < -0.1) x_diff(2) = -0.2;
+    //if(x_diff(3) > 0.2) x_diff(3) = 0.2;
+    //if(x_diff(3) < -0.2) x_diff(3) = -0.2;
+    //if(x_diff(4) > 0.1) x_diff(4) = 0.1;
+    //if(x_diff(4) < -0.1) x_diff(4) = -0.1;
+  //}
+  x_ += x_diff;
   P_ -= K * S * K.transpose();
 }
 
@@ -312,12 +354,12 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     double px = Xsig_pred_(0,i);
     double py = Xsig_pred_(1,i);
     double v = Xsig_pred_(2,i);
-    double psi = Xsig_pred_(3,i);
+    double yaw = Xsig_pred_(3,i);
 
     double rho = sqrt(px*px + py*py);
     Zsig(0,i) = rho;
     Zsig(1,i) = atan2(py,px);
-    Zsig(2,i) = v*(px*cos(psi) + py*sin(psi)) / rho;
+    Zsig(2,i) = v*(px*cos(yaw) + py*sin(yaw)) / rho;
   }
   // Calculate mean predicted measurement
   VectorXd z_pred = VectorXd(n_z);
@@ -355,6 +397,21 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
   while(z_diff(1) > M_PI) z_diff(1) -= 2. * M_PI;
   while(z_diff(1) < -M_PI) z_diff(1) += 2. * M_PI;
-  x_ += K * z_diff;
+  VectorXd x_diff = K * z_diff;
+  cout << "Radar x_diff: " << endl << x_diff << endl;
+  //if(iterations > 10) {
+    // After 10 iterations, when model has stabilized, don't let one measurement have too much impact.
+    //if(x_diff(0) > 0.1) x_diff(0) = 0.1;
+    //if(x_diff(0) < -0.1) x_diff(0) = -0.1;
+    //if(x_diff(1) > 0.1) x_diff(1) = 0.1;
+    //if(x_diff(1) < -0.1) x_diff(1) = -0.1;
+    //if(x_diff(2) > 0.1) x_diff(2) = 0.1;
+    //if(x_diff(2) < -0.1) x_diff(2) = -0.1;
+    //if(x_diff(3) > 0.1) x_diff(3) = 0.1;
+    //if(x_diff(3) < -0.1) x_diff(3) = -0.1;
+    //if(x_diff(4) > 0.1) x_diff(4) = 0.1;
+    //if(x_diff(4) < -0.1) x_diff(4) = -0.1;
+  //}
+  x_ += x_diff;
   P_ -= K * S * K.transpose();
 }
