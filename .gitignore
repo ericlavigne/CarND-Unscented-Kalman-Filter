@@ -1,5 +1,9 @@
 # silly macOS
 .DS_Store
 
+# CLion
+.idea
+cmake-build-debug
+
 # build files
 build/
