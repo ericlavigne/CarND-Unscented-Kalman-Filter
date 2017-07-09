@@ -120,11 +120,11 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
       x_ << px, py, 0, 0, 0;
 
-      P_(0,0) = std_laspx_;
-      P_(1,1) = std_laspy_;
-      P_(2,2) = 2.7 * 2.7; // Half of bicycle max speed
-      P_(3,3) = 0.25 * 3.14 * 3.14; // No idea. Limit uncertainty to quarter of circle to avoid extreme non-linearity.
-      P_(4,4) = 0.6 * 0.6; // Half of bicycle's maximum turning speed, because we have no idea.
+      P_(0,0) = std_laspx_*std_laspx_;
+      P_(1,1) = std_laspy_*std_laspy_;
+      P_(2,2) = pow(6.5,2); // Half of bicycle max speed
+      P_(3,3) = pow(M_PI,2); // No idea. Limit uncertainty to quarter of circle to avoid extreme non-linearity.
+      P_(4,4) = pow(0.2,2); // Half of bicycle's maximum turning speed, because we have no idea.
 
       cout << "Initializing with lidar: " << endl << x_ << endl;
       cout << "Pmag = " << P_.norm() << endl;
@@ -139,7 +139,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     return;
   }
   double delta_t = (meas_package.timestamp_ - time_us_) * 0.000001;
-  if(iterations == 1) {
+  if(false && iterations == 1) { // Turning off something that made RMSE overall better, but further from rubric due to vy
     cout << "Second measurement - improving initial estimates for velocity and yaw" << endl;
     double old_px = x_(0);
     double old_py = x_(1);
