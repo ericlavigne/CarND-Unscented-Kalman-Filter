@@ -107,9 +107,9 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
       P_(0,0) = spatial_uncertainty * spatial_uncertainty;
       P_(1,1) = spatial_uncertainty * spatial_uncertainty;
-      P_(2,2) = 2.7 * 2.7; // Half of bicycle max speed
-      P_(3,3) = 0.25 * 3.14 * 3.14; // No idea. Limit uncertainty to quarter of circle to avoid extreme non-linearity.
-      P_(4,4) = 0.6 * 0.6; // Half of bicycle's maximum turning speed, because we have no idea.
+      P_(2,2) = pow(6.5,2);
+      P_(3,3) = pow(M_PI,2);
+      P_(4,4) = pow(0.2,2);
 
       cout << "Initializing with radar: " << endl << x_ << endl << "Pmag = " << P_.norm() << endl;
 
@@ -120,11 +120,11 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
       x_ << px, py, 0, 0, 0;
 
-      P_(0,0) = std_laspx_*std_laspx_;
-      P_(1,1) = std_laspy_*std_laspy_;
-      P_(2,2) = pow(6.5,2); // Half of bicycle max speed
-      P_(3,3) = pow(M_PI,2); // No idea. Limit uncertainty to quarter of circle to avoid extreme non-linearity.
-      P_(4,4) = pow(0.2,2); // Half of bicycle's maximum turning speed, because we have no idea.
+      P_(0,0) = pow(std_laspx_,2);
+      P_(1,1) = pow(std_laspy_,2);
+      P_(2,2) = pow(6.5,2);
+      P_(3,3) = pow(M_PI,2);
+      P_(4,4) = pow(0.2,2);
 
       cout << "Initializing with lidar: " << endl << x_ << endl;
       cout << "Pmag = " << P_.norm() << endl;
@@ -351,7 +351,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   VectorXd x_diff = K * z_diff;
   cout << "Lidar x_diff: " << endl << x_diff << endl;
-  //if(iterations > 10) {
+  if(iterations > 10) {
     // After 10 iterations, when model has stabilized, don't let one measurement have too much impact.
     //if(x_diff(0) > 0.1) x_diff(0) = 0.1;
     //if(x_diff(0) < -0.1) x_diff(0) = -0.1;
@@ -359,11 +359,11 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     //if(x_diff(1) < -0.1) x_diff(1) = -0.1;
     //if(x_diff(2) > 0.1) x_diff(2) = 0.2;
     //if(x_diff(2) < -0.1) x_diff(2) = -0.2;
-    //if(x_diff(3) > 0.2) x_diff(3) = 0.2;
-    //if(x_diff(3) < -0.2) x_diff(3) = -0.2;
+    if(x_diff(3) > 0.5) x_diff(3) = 0.5;
+    if(x_diff(3) < -0.5) x_diff(3) = -0.5;
     //if(x_diff(4) > 0.1) x_diff(4) = 0.1;
     //if(x_diff(4) < -0.1) x_diff(4) = -0.1;
-  //}
+  }
   x_ += x_diff;
   P_ -= K * S * K.transpose();
 }
@@ -436,8 +436,8 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     //if(x_diff(1) < -0.1) x_diff(1) = -0.1;
     //if(x_diff(2) > 0.1) x_diff(2) = 0.1;
     //if(x_diff(2) < -0.1) x_diff(2) = -0.1;
-    //if(x_diff(3) > 0.5) x_diff(3) = 0.5;
-    //if(x_diff(3) < -0.5) x_diff(3) = -0.5;
+    //if(x_diff(3) > 0.9) x_diff(3) = 0.9;
+    //if(x_diff(3) < -0.9) x_diff(3) = -0.9;
     //if(x_diff(4) > 0.1) x_diff(4) = 0.1;
     //if(x_diff(4) < -0.1) x_diff(4) = -0.1;
   }
