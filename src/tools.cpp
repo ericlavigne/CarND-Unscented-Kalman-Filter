@@ -27,7 +27,7 @@ VectorXd Tools::CalculateRMSE(const vector<VectorXd> &estimations,
     //cout << "  Residual " << residual(0) << " = estimation " << estimations[i](0) << " - truth " << ground_truth[i](0) << endl;
     //cout << "  Residual^2 " << residual_squared(0) << endl;
     //cout << "  Total " << rmse(0) << endl << endl;
-    if(false && i > 5 && (residual_squared(0) > 10 || residual_squared(1) > 10 || residual_squared(2) > 40 || residual_squared(3) > 40)) {
+    if(true && i > 5 && (residual_squared(0) > 10 || residual_squared(1) > 10 || residual_squared(2) > 40 || residual_squared(3) > 40)) {
       cout << "Crazy Residual! " << endl;
       cout << "estimation" << endl << estimations[i] << endl;
       cout << "truth" << endl << ground_truth[i] << endl;

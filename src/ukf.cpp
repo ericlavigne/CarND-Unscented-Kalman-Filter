@@ -139,6 +139,34 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     return;
   }
   double delta_t = (meas_package.timestamp_ - time_us_) * 0.000001;
+  if(iterations == 1) {
+    cout << "Second measurement - improving initial estimates for velocity and yaw" << endl;
+    double old_px = x_(0);
+    double old_py = x_(1);
+    double new_px = x_(0);
+    double new_py = x_(1);
+    if(meas_package.sensor_type_ == MeasurementPackage::LASER) {
+      new_px = meas_package.raw_measurements_(0);
+      new_py = meas_package.raw_measurements_(1);
+    }
+    if(meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+      double ro = meas_package.raw_measurements_[0];
+      double theta = meas_package.raw_measurements_[1];
+      // Convert radar from polar to cartesian coordinates
+      new_px = ro * sin(theta);
+      new_py = ro * cos(theta);
+    }
+    double dx = new_px - old_px;
+    double dy = new_py - old_py;
+    if(fabs(dx) > 0.01 || fabs(dy) > 0.01) {
+      x_(2) = sqrt(dy*dy + dx*dx) / delta_t; // v
+      x_(3) = atan2(dy,dx); // yaw
+      P_(2,2) = 0.2; // v variance
+      P_(3,3) = 1.0; // yaw variance
+      P_(4,4) = 0.1; // yawd variance
+      cout << "Improved estimates for velocity and yaw:" << endl << x_ << endl;
+    }
+  }
   cout << "Performing prediction with deltat of " << delta_t << endl;
   Prediction(delta_t);
   cout << "After prediction:" << endl << x_ << endl;
@@ -367,6 +395,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   for(int i = 0; i < 2*n_aug_+1; i++) {
     z_pred += weights(i) * Zsig.col(i);
   }
+  cout << "Radar z_pred:" << endl << z_pred << endl;
   // Measurement covariance
   MatrixXd S = MatrixXd(n_z,n_z);
   S.fill(0.0);
@@ -399,7 +428,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   while(z_diff(1) < -M_PI) z_diff(1) += 2. * M_PI;
   VectorXd x_diff = K * z_diff;
   cout << "Radar x_diff: " << endl << x_diff << endl;
-  //if(iterations > 10) {
+  if(iterations > 10) {
     // After 10 iterations, when model has stabilized, don't let one measurement have too much impact.
     //if(x_diff(0) > 0.1) x_diff(0) = 0.1;
     //if(x_diff(0) < -0.1) x_diff(0) = -0.1;
@@ -407,11 +436,11 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     //if(x_diff(1) < -0.1) x_diff(1) = -0.1;
     //if(x_diff(2) > 0.1) x_diff(2) = 0.1;
     //if(x_diff(2) < -0.1) x_diff(2) = -0.1;
-    //if(x_diff(3) > 0.1) x_diff(3) = 0.1;
-    //if(x_diff(3) < -0.1) x_diff(3) = -0.1;
+    //if(x_diff(3) > 0.5) x_diff(3) = 0.5;
+    //if(x_diff(3) < -0.5) x_diff(3) = -0.5;
     //if(x_diff(4) > 0.1) x_diff(4) = 0.1;
     //if(x_diff(4) < -0.1) x_diff(4) = -0.1;
-  //}
+  }
   x_ += x_diff;
   P_ -= K * S * K.transpose();
 }
